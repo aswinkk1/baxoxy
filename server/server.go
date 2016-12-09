@@ -1,7 +1,6 @@
 package server
 
 import (
-  "fmt"
 
     "github.com/kataras/iris"
 )
@@ -14,19 +13,23 @@ type User struct {
 var users map[string]User
 
 func CreateServer() {
-  users = make(m)
+  users = make(map[string]User)
   iris.Post("webchat/signup", func(ctx *iris.Context) {
     user := &User{}
     if err := ctx.ReadJSON(user); err != nil {
       panic(err.Error())
     } else {
-      if m[user.Username] != nil {
-        m[user.Username] = user
+      ctx.Write("Registered: %v", user.Username)
+      if usr, ok := users[user.Username]; ok == false {
+        users[user.Username] = *user
         ctx.Write("Registered: %#v", user.Username)
       } else {
-        ctx.Write("Username Exists")
+        ctx.Write("Username Exists: %v", usr.Username)
       }
     }
+  })
+  iris.Get("webchat/users", func(ctx *iris.Context) {
+    ctx.JSON(iris.StatusOK, users)
   })
 
   iris.Listen("localhost:5700")
