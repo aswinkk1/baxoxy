@@ -3,25 +3,33 @@ package server
 import (
 	// Third party packages
 	"github.com/kataras/iris"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/aswinkk1/baxoxy/controllers"
+	 jwtmiddleware "github.com/iris-contrib/middleware/jwt"
 	"gopkg.in/mgo.v2"
 )
+
 
 func CreateServer() {
 
 	// Get a UserController instance
 	uc := controllers.NewUserController(getSession())
 	
-	//test
-//	iris.Get("webchat/users", func(ctx *iris.Context) {
-//		ctx.JSON(iris.StatusOK, {})
-//  	})
-	
-//	// Get a user resource
-//	iris.GET("webchat/users/:id", uc.GetUser)
-
+	myJwtMiddleware := jwtmiddleware.New(jwtmiddleware.Config{
+        ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+            return []byte("secret"), nil
+        },
+        SigningMethod: jwt.SigningMethodHS256,
+    })
 	// Create a new user
 	iris.Post("webchat/signup", uc.CreateUser)
+	
+	//login
+	iris.Post("webchat/login", uc.Login)
+	
+	//test
+	iris.Post("webchat/signin", myJwtMiddleware.Serve, uc.SecuredPingHandler)
+	
 
 //	// Remove an existing user
 //	iris.DELETE("webchat/users/:id", uc.RemoveUser)

@@ -1,9 +1,11 @@
 package controllers
 
 import (
-//	"encoding/json"
+	"encoding/json"
 	"log"
-
+	"time"
+	
+	"github.com/dgrijalva/jwt-go"
 	"github.com/kataras/iris"
 	"github.com/aswinkk1/baxoxy/models"
 	"gopkg.in/mgo.v2"
@@ -15,6 +17,13 @@ type (
 	UserController struct {
 		session *mgo.Session
 	}
+	
+	Response struct {
+		status int
+		action string
+		message	string
+		token string
+	}
 )
 
 // NewUserController provides a reference to a UserController with provided mongo session
@@ -24,7 +33,7 @@ func NewUserController(s *mgo.Session) *UserController {
 
 // CreateUser creates a new user resource
 func (uc UserController) CreateUser(ctx *iris.Context) {
-	log.Println("calla")
+	
 	user := models.User{}
 	response := `{"status" : 400, "error_message" :"Error"}`
 	
@@ -44,4 +53,37 @@ func (uc UserController) CreateUser(ctx *iris.Context) {
 	ctx.JSON(iris.StatusCreated, response)
 }
 
-// RemoveUser removes an existing user resource
+// Login removes an existing user resource
+func (uc UserController) Login(ctx *iris.Context) {
+	// Stub an user to be populated from the body
+	user := models.User{}
+	response := `{"status" : 400, "error_message" :"Error"}`
+	
+    if err := ctx.ReadJSON(&user); err != nil {
+		log.Println(err.Error())
+	} else { 
+		log.Println("user.Username", user.Username)
+		dbData := models.User{}
+		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).One(&dbData); error != nil{
+			log.Println(error.Error())
+		} else {
+			log.Println("db",dbData.Password, "APi", user.Password)
+			if dbData.Password == user.Password {
+				token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+				"foo": "bar",
+				"nbf": time.Date(2015, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
+			})
+
+			// Sign and get the complete encoded token as a string using the secret
+				tokenString, err := token.SignedString([]byte("secret"))
+				response = `{ "status": 201, "action": "login", "message": "user signed", "token":"" }`	
+				log.Println("tokenString", tokenString, err)
+			}
+		}
+	}
+	ctx.JSON(iris.StatusCreated, response)
+}
+
+func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
+    ctx.Write("All good. You only get this message if you're authenticated")
+}
