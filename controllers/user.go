@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"encoding/json"
+//	"encoding/json"
 	"log"
 
 	"github.com/kataras/iris"
@@ -22,27 +22,26 @@ func NewUserController(s *mgo.Session) *UserController {
 	return &UserController{s}
 }
 
-
 // CreateUser creates a new user resource
 func (uc UserController) CreateUser(ctx *iris.Context) {
 	log.Println("calla")
 	user := models.User{}
+	response := `{"status" : 400, "error_message" :"Error"}`
 	
     if err := ctx.ReadJSON(&user); err != nil {
 		log.Println(err.Error())
     } else {	
-		// Populate the user data
-//		json.NewDecoder(body).Decode(&user)
-		
-		// Add an Id
+		log.Println("user.Username", user.Username)
+		if count, err := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).Count(); count == 0 {
 		user.Id = bson.NewObjectId()
-		
 		uc.session.DB("baxoxy").C("users").Insert(user)
-		// Marshal provided interface into JSON structure
-		uj, _ := json.Marshal(string(user))
-        ctx.Write("Registered: %#v", uj)
-      
-    }	
+		response = `{ "status": 200, "action": "signup", "message": "Sign Up Successful" }`
+		} else {
+			log.Println("Query--", count," ", err)
+			response = `{ "status": 201, "action": "signup", "message": "username already exists" }`	
+		}
+    }
+	ctx.JSON(iris.StatusCreated, response)
 }
 
 // RemoveUser removes an existing user resource
