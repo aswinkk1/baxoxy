@@ -1,13 +1,13 @@
 package controllers
 
 import (
-	"encoding/json"
+	// "encoding/json"
 	"log"
 	"time"
-	
+
+	"github.com/aswinkk1/baxoxy/models"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/kataras/iris"
-	"github.com/aswinkk1/baxoxy/models"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -17,12 +17,12 @@ type (
 	UserController struct {
 		session *mgo.Session
 	}
-	
+
 	Response struct {
-		status int
-		action string
-		message	string
-		token string
+		Status  int    `json:"status"`
+		Action  string `json:"action"`
+		Message string `json:"message"`
+		Token   string `json:"token"`
 	}
 )
 
@@ -33,23 +33,27 @@ func NewUserController(s *mgo.Session) *UserController {
 
 // CreateUser creates a new user resource
 func (uc UserController) CreateUser(ctx *iris.Context) {
-	
+
 	user := models.User{}
-	response := `{"status" : 400, "error_message" :"Error"}`
-	
-    if err := ctx.ReadJSON(&user); err != nil {
+	response := Response{Status: 400, Message: "Error"}
+	log.Println("Quer--", response)
+	if err := ctx.ReadJSON(&user); err != nil {
 		log.Println(err.Error())
-    } else {	
+	} else {
 		log.Println("user.Username", user.Username)
 		if count, err := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).Count(); count == 0 {
-		user.Id = bson.NewObjectId()
-		uc.session.DB("baxoxy").C("users").Insert(user)
-		response = `{ "status": 200, "action": "signup", "message": "Sign Up Successful" }`
+			user.Id = bson.NewObjectId()
+			uc.session.DB("baxoxy").C("users").Insert(user)
+			response.Status = 200
+			response.Action = "signup"
+			response.Message = "Sign Up Successfull"
 		} else {
-			log.Println("Query--", count," ", err)
-			response = `{ "status": 201, "action": "signup", "message": "username already exists" }`	
+			log.Println("Query--", response, " ", err)
+			response.Status = 201
+			response.Message = "Username already exists"
 		}
-    }
+	}
+	log.Println("Quer--", response)
 	ctx.JSON(iris.StatusCreated, response)
 }
 
@@ -57,26 +61,28 @@ func (uc UserController) CreateUser(ctx *iris.Context) {
 func (uc UserController) Login(ctx *iris.Context) {
 	// Stub an user to be populated from the body
 	user := models.User{}
-	response := `{"status" : 400, "error_message" :"Error"}`
-	
-    if err := ctx.ReadJSON(&user); err != nil {
+	response := Response{Status: 400, Message: "Error"}
+	if err := ctx.ReadJSON(&user); err != nil {
 		log.Println(err.Error())
-	} else { 
+	} else {
 		log.Println("user.Username", user.Username)
 		dbData := models.User{}
-		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).One(&dbData); error != nil{
+		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).One(&dbData); error != nil {
 			log.Println(error.Error())
 		} else {
-			log.Println("db",dbData.Password, "APi", user.Password)
+			log.Println("db", dbData.Password, "APi", user.Password)
 			if dbData.Password == user.Password {
 				token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-				"foo": "bar",
-				"nbf": time.Date(2015, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
-			})
+					"foo": "bar",
+					"nbf": time.Date(2015, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
+				})
 
-			// Sign and get the complete encoded token as a string using the secret
+				// Sign and get the complete encoded token as a string using the secret
 				tokenString, err := token.SignedString([]byte("secret"))
-				response = `{ "status": 201, "action": "login", "message": "user signed", "token":"" }`	
+				response.Status = 201
+				response.Action = "login"
+				response.Message = "user signed"
+				response.Token = tokenString
 				log.Println("tokenString", tokenString, err)
 			}
 		}
@@ -85,5 +91,5 @@ func (uc UserController) Login(ctx *iris.Context) {
 }
 
 func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
-    ctx.Write("All good. You only get this message if you're authenticated")
+	ctx.Write("All good. You only get this message if you're authenticated")
 }
