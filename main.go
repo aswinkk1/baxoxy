@@ -1,9 +1,9 @@
 package main
 
-import(
-  "github.com/aswinkk1/baxoxy/server"
+import (
+	"github.com/aswinkk1/baxoxy/server"
 )
 
 func main() {
-  server.CreateServer()
+	server.CreateServer()
 }
