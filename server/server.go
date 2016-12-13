@@ -25,6 +25,10 @@ func CreateServer() {
 
 	//login
 	iris.Post("webchat/login", uc.Login)
+	
+	//logout
+	iris.Post("webchat/logout", uc.Logout)
+
 
 	//test
 	iris.Post("webchat/signin", myJwtMiddleware.Serve, uc.SecuredPingHandler)

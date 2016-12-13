@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aswinkk1/baxoxy/models"
+	"github.com/aswinkk1/baxoxy/services"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/kataras/iris"
 	"gopkg.in/mgo.v2"
@@ -83,6 +84,13 @@ func (uc UserController) Login(ctx *iris.Context) {
 				response.Action = "login"
 				response.Message = "user signed"
 				response.Token = tokenString
+				
+				dbClient := services.RedisClient()
+				dbErr := dbClient.Set(user.Username, tokenString, 0).Err()
+				if dbErr != nil {
+					log.Println("error", dbErr)
+					response.Message ="Error"
+				}
 				log.Println("tokenString", tokenString, err)
 			}
 		}
@@ -90,6 +98,34 @@ func (uc UserController) Login(ctx *iris.Context) {
 	ctx.JSON(iris.StatusCreated, response)
 }
 
+
+func (uc UserController) Logout(ctx *iris.Context) {
+	user := models.User{}
+	response := Response{Status: 400, Message: "Error"}
+	if err := ctx.ReadJSON(&user); err != nil {
+		log.Println(err.Error())
+	} else {
+		log.Println("user.Username", user.Username)
+		if count, err := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).Count(); count == 0 {
+			log.Println(err.Error())
+			response.Message ="Logged out Error"
+		} else {			
+			dbClient := services.RedisClient()
+			err := dbClient.Del(user.Username).Err()
+			if err != nil {
+				response.Message ="Logged out Error"
+			} else {
+				response.Status = 200
+				response.Action = "logout"
+				response.Message = "logged Out successfully"
+			}
+			log.Println("token deleted with key", user.Username)
+		}
+	}
+	ctx.JSON(iris.StatusCreated, response)
+}
+
 func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
+	
 	ctx.Write("All good. You only get this message if you're authenticated")
 }
