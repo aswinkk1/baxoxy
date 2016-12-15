@@ -1,13 +1,35 @@
 package server
 
 import (
+	"log"
 	// Third party packages
 	"github.com/aswinkk1/baxoxy/controllers"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/dgrijalva/jwt-go"
 	jwtmiddleware "github.com/iris-contrib/middleware/jwt"
 	"github.com/kataras/iris"
 	"gopkg.in/mgo.v2"
 )
+func WebSocket(){
+	iris.Config.Websocket.Endpoint = "/test"
+    // for Allow origin you can make use of the middleware
+    //iris.Config.Websocket.Headers["Access-Control-Allow-Origin"] = "*"
+
+    var myChatRoom = "room1"
+    iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
+		spew.Dump(c)
+        c.Join(myChatRoom)
+		log.Println("\nConnection with ID: %s has been connected!", c.ID())	
+        c.On("chat", func(message string) {
+            c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
+        })
+
+        c.OnDisconnect(func() {
+            log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
+        })
+    })	
+}
+
 
 func CreateServer() {
 
@@ -32,7 +54,25 @@ func CreateServer() {
 
 	//test
 	iris.Post("webchat/signin", myJwtMiddleware.Serve, uc.SecuredPingHandler)
+	
+	iris.Config.Websocket.Endpoint = "/"
+    // for Allow origin you can make use of the middleware
+    //iris.Config.Websocket.Headers["Access-Control-Allow-Origin"] = "*"
+	 var myChatRoom = "room1"
+    iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
+		log.Println("params", c)
+		spew.Dump(c)
+        c.Join(myChatRoom)
+		log.Println("\nConnection with ID: %s has been connected!", c.ID())	
+        c.On("chat", func(message string) {
+			log.Println("From: ", c.ID(), ":message ", message)
+            c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
+        })
 
+        c.OnDisconnect(func() {
+            log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
+        })
+    })	
 	//	// Remove an existing user
 	//	iris.DELETE("webchat/users/:id", uc.RemoveUser)
 	iris.OnError(iris.StatusInternalServerError, func(ctx *iris.Context) {
