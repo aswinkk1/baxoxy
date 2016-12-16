@@ -3,10 +3,15 @@ package server
 import (
 	// Third party packages
 	"github.com/aswinkk1/baxoxy/controllers"
-	"github.com/dgrijalva/jwt-go"
-	jwtmiddleware "github.com/iris-contrib/middleware/jwt"
-	"github.com/kataras/iris"
+	//"github.com/aswinkk1/baxoxy/jwthandler"
+	//"github.com/dgrijalva/jwt-go"
+	//jwtmiddleware "github.com/iris-contrib/middleware/jwt"
+	//"github.com/kataras/iris"
 	"gopkg.in/mgo.v2"
+	//"fmt"
+	"log"
+	"github.com/buaazp/fasthttprouter"
+    "github.com/valyala/fasthttp"
 )
 
 func CreateServer() {
@@ -14,7 +19,7 @@ func CreateServer() {
 	// Get a UserController instance
 	uc := controllers.NewUserController(getSession())
 
-	myJwtMiddleware := jwtmiddleware.New(jwtmiddleware.Config{
+	/*myJwtMiddleware := jwtmiddleware.New(jwtmiddleware.Config{
 		ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
 			return []byte("secret"), nil
 		},
@@ -51,8 +56,28 @@ func CreateServer() {
 		ctx.EmitError(iris.StatusNotFound) // ctx.NotFound()
 	})
 
+	iris.Config.Websocket.Endpoint = "/my_endpoint"
+
+	var myChatRoom = "room1"
+    iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
+    	c.Join(myChatRoom)
+
+        c.On("chat", func(message string) {
+        	c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
+        })
+        c.OnDisconnect(func() {
+            fmt.Printf("\nConnection with ID: %s has been disconnected!", c.ID())
+        })
+    })
+
 	// Fire up the server
-	iris.Listen("localhost:5700")
+	iris.Listen("localhost:5700")*/
+	router := fasthttprouter.New()
+    router.POST("/webchat/signup", uc.CreateUser)
+    router.POST("/webchat/login", uc.Login)
+
+    log.Fatal(fasthttp.ListenAndServe(":8080", router.Handler))
+
 }
 
 // getSession creates a new mongo session and panics if connection error occurs
