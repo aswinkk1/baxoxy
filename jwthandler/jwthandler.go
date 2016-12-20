@@ -5,6 +5,7 @@ import (
     "time"
 
     "github.com/dgrijalva/jwt-go"
+    "github.com/valyala/fasthttp"
 )
 
 const (
@@ -23,14 +24,20 @@ func CreateToken(userName string) (string, error) {
     return tokenString, err
 }
 
-func ParseToken(myToken string, myKey string) {
-    token, err := jwt.Parse(myToken, func(token *jwt.Token) (interface{}, error) {
-        return []byte(myKey), nil
+func BasicAuth(h fasthttp.RequestHandler, requiredUser, requiredPassword string) fasthttp.RequestHandler {
+    return fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+        // Get the Basic Authentication credentials
+        fmt.Println("basicauth")
+        myToken := string(ctx.Request.Header.Peek("Authorization"))
+        myKey := "WOW,MuchShibe,ToDogge"
+        token, err := jwt.Parse(myToken, func(token *jwt.Token) (interface{}, error) {
+            return []byte(myKey), nil
+        })
+        if err == nil && token.Valid {
+            fmt.Println("Your token is valid.  I like your style.")
+            h(ctx)
+        } else {
+            fmt.Println("This token is terrible!  I cannot accept this.")
+        }
     })
-
-    if err == nil && token.Valid {
-        fmt.Println("Your token is valid.  I like your style.")
-    } else {
-        fmt.Println("This token is terrible!  I cannot accept this.")
-    }
 }

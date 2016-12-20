@@ -121,24 +121,6 @@ func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
 	}
 }
 
-func (uc UserController) SecuredPingHandler(ctx *fasthttp.RequestCtx) {
-	/*ctx.Write("All good. You only get this message if you're authenticated")
-	tokenString := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE0NDQ0Nzg0MDAsInVzZXJuYW1lIjoiYXN3aW4ifQ.30F4x3usaqW603f-_srNlx3ZdUwtO8bbqP_5N_G7I9c"
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-	    // Don't forget to validate the alg is what you expect:
-	    if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-	        log.Println("Unexpected signing method: %v", token.Header["alg"])
-	    }
-	    return nil, nil
-	})
-	log.Println("token", token)
-	log.Println("error", err)
-	claims := token.Claims.(jwt.MapClaims);
-	log.Println(claims["username"])
-	/*if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-    	log.Println(claims["username"], claims["nbf"])
-	} else {
-    	log.Println(err)
-	}*/
-
+func (uc UserController) Protected(ctx *fasthttp.RequestCtx) {
+    fmt.Println("Protected!\n")
 }
