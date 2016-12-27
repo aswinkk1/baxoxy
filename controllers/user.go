@@ -15,6 +15,9 @@ import (
 	//"github.com/buaazp/fasthttprouter"
     "github.com/valyala/fasthttp"
     "fmt"
+    "github.com/fasthttp-contrib/websocket"
+    "net"
+    "sync"
 
 )
 
@@ -31,6 +34,7 @@ type (
 		Token   string `json:"token"`
 	}
 )
+
 
 // NewUserController provides a reference to a UserController with provided mongo session
 func NewUserController(s *mgo.Session) *UserController {
@@ -123,4 +127,61 @@ func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
 
 func (uc UserController) Protected(ctx *fasthttp.RequestCtx) {
     fmt.Println("Protected!\n")
+}
+
+func (uc UserController) Chathandler(ctx *fasthttp.RequestCtx) {
+    fmt.Println("Websocket request!\n")
+    err := upgrader.Upgrade(ctx)
+    log.Println(err)
+}
+
+var upgrader = websocket.New(chat)
+
+func chat(ws *websocket.Conn) {
+    client := ws.RemoteAddr()
+	sockCli := ClientConn{ws, client}
+	addClient(sockCli)
+
+	for {
+			log.Println(len(ActiveClients), ActiveClients)
+			messageType, p, err := ws.ReadMessage()
+			if err != nil {
+				deleteClient(sockCli)
+				log.Println("bye")
+				log.Println(err)
+				return
+			}
+			broadcastMessage(messageType, p)
+	}
+}
+
+var ActiveClients = make(map[ClientConn]int)
+var ActiveClientsRWMutex sync.RWMutex
+
+type ClientConn struct {
+	websocket *websocket.Conn
+	clientIP  net.Addr
+}
+
+func addClient(cc ClientConn) {
+	ActiveClientsRWMutex.Lock()
+	ActiveClients[cc] = 0
+	ActiveClientsRWMutex.Unlock()
+}
+
+func deleteClient(cc ClientConn) {
+	ActiveClientsRWMutex.Lock()
+	delete(ActiveClients, cc)
+	ActiveClientsRWMutex.Unlock()
+}
+
+func broadcastMessage(messageType int, message []byte) {
+	ActiveClientsRWMutex.RLock()
+	defer ActiveClientsRWMutex.RUnlock()
+
+	for client, _ := range ActiveClients {
+		if err := client.websocket.WriteMessage(messageType, message); err != nil {
+			return
+		}
+	}
 }

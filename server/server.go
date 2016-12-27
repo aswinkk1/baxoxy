@@ -24,10 +24,10 @@ func CreateServer() {
 	router := fasthttprouter.New()
     router.POST("/webchat/signup", uc.CreateUser)
     router.POST("/webchat/login", uc.Login)
+    router.GET("/",uc.Chathandler)
     router.GET("/webchat/protected/", jwthandler.BasicAuth(uc.Protected, user, pass))
 
     log.Fatal(fasthttp.ListenAndServe(":8080", router.Handler))
-
 }
 
 // getSession creates a new mongo session and panics if connection error occurs
