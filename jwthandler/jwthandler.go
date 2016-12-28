@@ -11,6 +11,11 @@ import (
 const (
     mySigningKey = "WOW,MuchShibe,ToDogge"
 )
+type MyCustomClaims struct {
+    Username string `json:"username"`
+    jwt.StandardClaims
+}
+
 
 func CreateToken(userName string) (string, error) {
     // Create the token
@@ -28,16 +33,38 @@ func BasicAuth(h fasthttp.RequestHandler, requiredUser, requiredPassword string)
     return fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
         // Get the Basic Authentication credentials
         fmt.Println("basicauth")
-        myToken := string(ctx.Request.Header.Peek("Authorization"))
+        var myToken string
+        if ctx.Request.Header.Peek("Authorization") != nil {
+            myToken = string(ctx.Request.Header.Peek("Authorization"))
+        }else{
+            myToken = string(ctx.FormValue("token"))
+        }
         myKey := "WOW,MuchShibe,ToDogge"
-        token, err := jwt.Parse(myToken, func(token *jwt.Token) (interface{}, error) {
+        token, err := jwt.ParseWithClaims(myToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
             return []byte(myKey), nil
         })
-        if err == nil && token.Valid {
-            fmt.Println("Your token is valid.  I like your style.")
+
+        if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {
+            fmt.Printf("%v", claims.Username)
             h(ctx)
         } else {
-            fmt.Println("This token is terrible!  I cannot accept this.")
+            fmt.Println(err)
         }
     })
+}
+
+func TokenParser(myToken string) (string,error){
+    myKey := "WOW,MuchShibe,ToDogge"
+    var username string
+    token, err := jwt.ParseWithClaims(myToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+        return []byte(myKey), nil
+    })
+
+    if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {
+        fmt.Printf("%v", claims.Username)
+        username = claims.Username
+    } else {
+        fmt.Println(err)
+    }
+    return username,err
 }

@@ -129,8 +129,29 @@ func (uc UserController) Protected(ctx *fasthttp.RequestCtx) {
     fmt.Println("Protected!\n")
 }
 
+var tokenString string
+
+type Message struct {
+        To    string `json:"to"`
+        Message string `json:"message"`
+}
+
+type Reply struct {
+	Type string `json:"type"`
+	Data Datas `json:"data"`
+}
+type Datas struct {
+	Time string `json:"time"`
+	Text string `json:"text"`
+	To string `json:"to"`
+	Author string `json:"author"`
+}
+
 func (uc UserController) Chathandler(ctx *fasthttp.RequestCtx) {
-    fmt.Println("Websocket request!\n")
+	tokenString = string(ctx.FormValue("token"))
+    fmt.Println("Websocket request!\n",  tokenString)
+    username, error :=jwthandler.TokenParser(tokenString)
+    log.Println("username:", username, error)
     err := upgrader.Upgrade(ctx)
     log.Println(err)
 }
@@ -139,49 +160,64 @@ var upgrader = websocket.New(chat)
 
 func chat(ws *websocket.Conn) {
     client := ws.RemoteAddr()
-	sockCli := ClientConn{ws, client}
+	sockCli := ClientConn{ws, client, tokenString}
 	addClient(sockCli)
 
 	for {
-			log.Println(len(ActiveClients), ActiveClients)
-			messageType, p, err := ws.ReadMessage()
+			//log.Println(len(ActiveClients), ActiveClients)
+			//messageType, p, err := ws.ReadMessage()
+			var msg Message
+
+			err := ws.ReadJSON(&msg)
+			log.Println(msg)
+			username,_ :=jwthandler.TokenParser(tokenString)
 			if err != nil {
-				deleteClient(sockCli)
+				deleteClient(username)
 				log.Println("bye")
 				log.Println(err)
 				return
 			}
-			broadcastMessage(messageType, p)
+			broadcastMessage(msg, username)
 	}
 }
 
-var ActiveClients = make(map[ClientConn]int)
+var ActiveClients = make(map[string]ClientConn)
 var ActiveClientsRWMutex sync.RWMutex
 
 type ClientConn struct {
 	websocket *websocket.Conn
 	clientIP  net.Addr
+	token string
 }
 
 func addClient(cc ClientConn) {
 	ActiveClientsRWMutex.Lock()
-	ActiveClients[cc] = 0
+	username, error :=jwthandler.TokenParser(tokenString)
+	if error == nil{
+		ActiveClients[username] = cc
+	}
 	ActiveClientsRWMutex.Unlock()
 }
 
-func deleteClient(cc ClientConn) {
+func deleteClient(cc string) {
 	ActiveClientsRWMutex.Lock()
 	delete(ActiveClients, cc)
 	ActiveClientsRWMutex.Unlock()
 }
 
-func broadcastMessage(messageType int, message []byte) {
+func broadcastMessage(msg Message,from string) {
 	ActiveClientsRWMutex.RLock()
 	defer ActiveClientsRWMutex.RUnlock()
+	var dat = Datas{Time:"22/10",Text:msg.Message,To:msg.To,Author:from}
+	var rep = Reply{Type:"message",Data: dat}
+	if err := ActiveClients[msg.To].websocket.WriteJSON(rep); err != nil{
+		return
+	}
 
-	for client, _ := range ActiveClients {
-		if err := client.websocket.WriteMessage(messageType, message); err != nil {
+	/*for value, client := range ActiveClients {
+		log.Println("value=",value)
+		if err := client.websocket.WriteJSON(msg); err != nil {
 			return
 		}
-	}
+	}*/
 }
