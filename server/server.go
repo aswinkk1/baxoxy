@@ -7,7 +7,7 @@ import (
 	//"github.com/dgrijalva/jwt-go"
 	//jwtmiddleware "github.com/iris-contrib/middleware/jwt"
 	//"github.com/kataras/iris"
-	"gopkg.in/mgo.v2"
+	//"gopkg.in/mgo.v2"
 	//"fmt"
 	"log"
 	"github.com/buaazp/fasthttprouter"
@@ -17,7 +17,7 @@ import (
 func CreateServer() {
 
 	// Get a UserController instance
-	uc := controllers.NewUserController(getSession())
+	uc := controllers.Uc
 
 	user := "gordon"
     pass := "secret!"
@@ -30,16 +30,3 @@ func CreateServer() {
     log.Fatal(fasthttp.ListenAndServe(":8080", router.Handler))
 }
 
-// getSession creates a new mongo session and panics if connection error occurs
-func getSession() *mgo.Session {
-	// Connect to our local mongo
-	s, err := mgo.Dial("mongodb://localhost")
-
-	// Check if connection error, is mongo running?
-	if err != nil {
-		panic(err)
-	}
-
-	// Deliver session
-	return s
-}

@@ -3,7 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"log"
-	//"time"
+	"time"
 	"bytes"
 	"github.com/aswinkk1/baxoxy/models"
 	"github.com/aswinkk1/baxoxy/jwthandler"
@@ -33,8 +33,14 @@ type (
 		Message string `json:"message"`
 		Token   string `json:"token"`
 	}
+
+	Werror struct {
+		Type  string `json:"type"`
+		Data string `json:"data"`
+	}
 )
 
+var Uc = NewUserController(getSession())
 
 // NewUserController provides a reference to a UserController with provided mongo session
 func NewUserController(s *mgo.Session) *UserController {
@@ -116,6 +122,7 @@ func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
 					response.Status = 200
 					response.Action = "login"
 					response.Message = "login successfull"
+					response.Token = token
 					if b, err := json.Marshal(response); err == nil{
 						fmt.Fprintf(ctx, string(b))
 					}
@@ -133,7 +140,7 @@ var tokenString string
 
 type Message struct {
         To    string `json:"to"`
-        Message string `json:"message"`
+        Msg string `json:"msg"`
 }
 
 type Reply struct {
@@ -151,38 +158,53 @@ func (uc UserController) Chathandler(ctx *fasthttp.RequestCtx) {
 	tokenString = string(ctx.FormValue("token"))
     fmt.Println("Websocket request!\n",  tokenString)
     username, error :=jwthandler.TokenParser(tokenString)
+    if value,ok := ActiveClients[username]; ok{
+    	log.Println("close cheyyunna sthalam",value.websocket)
+    	value := ActiveClients[username].websocket
+    	value.Close();
+    	deleteClient(username)
+    }
     log.Println("username:", username, error)
     err := upgrader.Upgrade(ctx)
     log.Println(err)
 }
 
-var upgrader = websocket.New(chat)
+var upgrader = websocket.Custom(Uc.chat,1,1)
 
-func chat(ws *websocket.Conn) {
+func(uc UserController) chat(ws *websocket.Conn) {
+	ws.SetReadLimit(2000)
     client := ws.RemoteAddr()
 	sockCli := ClientConn{ws, client, tokenString}
 	addClient(sockCli)
-
+	log.Println("ActiveClients",ActiveClients)
 	for {
 			//log.Println(len(ActiveClients), ActiveClients)
-			//messageType, p, err := ws.ReadMessage()
 			var msg Message
 
 			err := ws.ReadJSON(&msg)
 			log.Println(msg)
-			username,_ :=jwthandler.TokenParser(tokenString)
+			username,_ := RemoteUserMap[ws.RemoteAddr()]
 			if err != nil {
-				deleteClient(username)
+				log.Println("msg.To:",msg.To)
+				deleteClient(msg.To)
+				log.Println(ActiveClients)
 				log.Println("bye")
 				log.Println(err)
+				rep := Werror{Type: "alert", Data: "The message length exceeded" }
+				if err := ActiveClients[username].websocket.WriteJSON(rep); err != nil{
+					return
+				}
 				return
 			}
-			broadcastMessage(msg, username)
+			log.Println("RemoteAddrNow",ws.RemoteAddr())
+			uc.broadcastMessage(msg, username)
 	}
 }
 
 var ActiveClients = make(map[string]ClientConn)
+var RemoteUserMap = make(map[net.Addr]string)
 var ActiveClientsRWMutex sync.RWMutex
+var RemoteUserMapRWMutex sync.RWMutex
 
 type ClientConn struct {
 	websocket *websocket.Conn
@@ -192,32 +214,64 @@ type ClientConn struct {
 
 func addClient(cc ClientConn) {
 	ActiveClientsRWMutex.Lock()
+	RemoteUserMapRWMutex.Lock()
 	username, error :=jwthandler.TokenParser(tokenString)
 	if error == nil{
 		ActiveClients[username] = cc
+		RemoteUserMap[cc.clientIP] = username
 	}
 	ActiveClientsRWMutex.Unlock()
+	RemoteUserMapRWMutex.Unlock()
 }
 
 func deleteClient(cc string) {
 	ActiveClientsRWMutex.Lock()
+	//RemoteUserMapRWMutex.Lock()
+	log.Println("ccdzs",cc)
 	delete(ActiveClients, cc)
+	//delete(RemoteUserMap, cc.clientIP)
 	ActiveClientsRWMutex.Unlock()
+	//RemoteUserMapRWMutex.Unlock()
 }
 
-func broadcastMessage(msg Message,from string) {
+func (uc UserController) broadcastMessage(msg Message,from string) {
 	ActiveClientsRWMutex.RLock()
 	defer ActiveClientsRWMutex.RUnlock()
-	var dat = Datas{Time:"22/10",Text:msg.Message,To:msg.To,Author:from}
-	var rep = Reply{Type:"message",Data: dat}
-	if err := ActiveClients[msg.To].websocket.WriteJSON(rep); err != nil{
-		return
-	}
-
-	/*for value, client := range ActiveClients {
-		log.Println("value=",value)
-		if err := client.websocket.WriteJSON(msg); err != nil {
+	dbData := models.User{}
+	if _,ok := ActiveClients[msg.To]; !ok{
+		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": msg.To}).One(&dbData); error != nil {
+			log.Println(error.Error(),"user not in db, user not exist")
+			rep := Werror{Type: "alert", Data: "The user doesn't exists" }
+			if err := ActiveClients[from].websocket.WriteJSON(rep); err != nil{
+				return
+			}
+		}else{
+			log.Println("userexist in db, user in offline")
+			rep := Werror{Type: "alert", Data: "The user is not available" }
+			if err := ActiveClients[from].websocket.WriteJSON(rep); err != nil{
+				return
+			}
+		}
+	}else{
+		t := time.Now()
+		var dat = Datas{Time:t.Format("2006/01/02/15:04:05"),Text:msg.Msg,To:msg.To,Author:from}
+		var rep = Reply{Type:"message",Data: dat}
+		if err := ActiveClients[msg.To].websocket.WriteJSON(rep); err != nil{
 			return
 		}
-	}*/
+	}
+}
+
+// getSession creates a new mongo session and panics if connection error occurs
+func getSession() *mgo.Session {
+	// Connect to our local mongo
+	s, err := mgo.Dial("mongodb://localhost")
+
+	// Check if connection error, is mongo running?
+	if err != nil {
+		panic(err)
+	}
+
+	// Deliver session
+	return s
 }
