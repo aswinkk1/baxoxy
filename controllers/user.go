@@ -53,7 +53,6 @@ func (uc UserController) CreateUser(ctx *fasthttp.RequestCtx) {
 	response := Response{Status: 400, Message: "Error"}
 	s :=   ctx.PostBody()
 	postbody := bytes.NewBuffer(s)
-	log.Println("postbody\n", postbody)
 	err := json.NewDecoder(postbody).Decode(&user)
 	if err != nil {
 	    log.Println("error:", err)
@@ -88,13 +87,11 @@ func (uc UserController) CreateUser(ctx *fasthttp.RequestCtx) {
 
 // Login removes an existing user resource
 func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
-	log.Println("Login")
 	// Stub an user to be populated from the body
 	user := models.User{}
 	response := Response{Status: 400, Message: "Error"}
 	s :=   ctx.PostBody()
 	postbody := bytes.NewBuffer(s)
-	log.Println("postbody\n", postbody)
 	err := json.NewDecoder(postbody).Decode(&user)
 	if err != nil {
 	    log.Println("error:", err)
@@ -110,10 +107,8 @@ func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
 		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).One(&dbData); error != nil {
 			log.Println(error.Error())
 		} else {
-			log.Println("db", dbData.Password, "APi", user.Password)
 			pass := libs.Password{}
 			var cp = pass.Compare(dbData.Password, user.Password)
-			log.Println("resp",cp)
 			if cp {
 				if token, err := jwthandler.CreateToken(user.Username); err == nil{
 					log.Println("token",token)
@@ -122,6 +117,7 @@ func (uc UserController) Login(ctx *fasthttp.RequestCtx) {
 					response.Status = 200
 					response.Action = "login"
 					response.Message = "login successfull"
+					log.Println("login successfull")
 					response.Token = token
 					if b, err := json.Marshal(response); err == nil{
 						fmt.Fprintf(ctx, string(b))
@@ -158,14 +154,15 @@ func (uc UserController) Chathandler(ctx *fasthttp.RequestCtx) {
 	tokenString = string(ctx.FormValue("token"))
     fmt.Println("Websocket request!\n",  tokenString)
     username, error :=jwthandler.TokenParser(tokenString)
-    if value,ok := ActiveClients[username]; ok{
+    /*if value,ok := ActiveClients[username]; ok{
     	log.Println("close cheyyunna sthalam",value.websocket)
     	value := ActiveClients[username].websocket
     	value.Close();
     	deleteClient(username)
-    }
+    }*/
     log.Println("username:", username, error)
     err := upgrader.Upgrade(ctx)
+    log.Println("websocket connected")
     log.Println(err)
 }
 
@@ -176,13 +173,13 @@ func(uc UserController) chat(ws *websocket.Conn) {
     client := ws.RemoteAddr()
 	sockCli := ClientConn{ws, client, tokenString}
 	addClient(sockCli)
-	log.Println("ActiveClients",ActiveClients)
+	log.Println("connection established")
 	for {
-			//log.Println(len(ActiveClients), ActiveClients)
+			log.Println(len(ActiveClients), ActiveClients)
 			var msg Message
-
+			log.Println("yep")
 			err := ws.ReadJSON(&msg)
-			log.Println(msg)
+			log.Println("msg:",msg)
 			username,_ := RemoteUserMap[ws.RemoteAddr()]
 			if err != nil {
 				log.Println("msg.To:",msg.To)
@@ -194,9 +191,8 @@ func(uc UserController) chat(ws *websocket.Conn) {
 				if err := ActiveClients[username].websocket.WriteJSON(rep); err != nil{
 					return
 				}
-				return
+				//ws.Close()
 			}
-			log.Println("RemoteAddrNow",ws.RemoteAddr())
 			uc.broadcastMessage(msg, username)
 	}
 }
@@ -227,7 +223,6 @@ func addClient(cc ClientConn) {
 func deleteClient(cc string) {
 	ActiveClientsRWMutex.Lock()
 	//RemoteUserMapRWMutex.Lock()
-	log.Println("ccdzs",cc)
 	delete(ActiveClients, cc)
 	//delete(RemoteUserMap, cc.clientIP)
 	ActiveClientsRWMutex.Unlock()
