@@ -3,7 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"log"
-	"time"
+	//"time"
 	"bytes"
 	"github.com/aswinkk1/baxoxy/models"
 	"github.com/aswinkk1/baxoxy/jwthandler"
@@ -16,8 +16,8 @@ import (
     "github.com/valyala/fasthttp"
     "fmt"
     "github.com/fasthttp-contrib/websocket"
-    "net"
-    "sync"
+    //"net"
+    //"sync"
 
 )
 
@@ -41,6 +41,7 @@ type (
 )
 
 var Uc = NewUserController(getSession())
+
 
 // NewUserController provides a reference to a UserController with provided mongo session
 func NewUserController(s *mgo.Session) *UserController {
@@ -167,98 +168,133 @@ func (uc UserController) Chathandler(ctx *fasthttp.RequestCtx) {
 }
 
 var upgrader = websocket.Custom(Uc.chat,1,1)
+var ActiveClients = make(map[string]*Client)
 
 func(uc UserController) chat(ws *websocket.Conn) {
-	ws.SetReadLimit(2000)
-    client := ws.RemoteAddr()
-	sockCli := ClientConn{ws, client, tokenString}
-	addClient(sockCli)
-	log.Println("connection established")
-	for {
-			log.Println(len(ActiveClients), ActiveClients)
-			var msg Message
-			log.Println("yep")
-			err := ws.ReadJSON(&msg)
-			log.Println("msg:",msg)
-			username,_ := RemoteUserMap[ws.RemoteAddr()]
-			if err != nil {
-				log.Println("msg.To:",msg.To)
-				deleteClient(msg.To)
-				log.Println(ActiveClients)
-				log.Println("bye")
-				log.Println(err)
-				rep := Werror{Type: "alert", Data: "The message length exceeded" }
-				if err := ActiveClients[username].websocket.WriteJSON(rep); err != nil{
-					return
-				}
-				//ws.Close()
-			}
-			uc.broadcastMessage(msg, username)
-	}
+	client := &Client{
+        ws:   ws,
+        send: make(chan []byte),
+    }
+    username, _ :=jwthandler.TokenParser(tokenString)
+    ActiveClients[username] = client
+    hub.addClient <- client
+
+    go client.write()
+    client.read()
 }
 
-var ActiveClients = make(map[string]ClientConn)
-var RemoteUserMap = make(map[net.Addr]string)
-var ActiveClientsRWMutex sync.RWMutex
-var RemoteUserMapRWMutex sync.RWMutex
 
-type ClientConn struct {
-	websocket *websocket.Conn
-	clientIP  net.Addr
-	token string
+type Hub struct {
+    clients map[*Client]bool
+    broadcast     chan []byte
+    addClient     chan *Client
+    removeClient  chan *Client
 }
 
-func addClient(cc ClientConn) {
-	ActiveClientsRWMutex.Lock()
-	RemoteUserMapRWMutex.Lock()
-	username, error :=jwthandler.TokenParser(tokenString)
-	if error == nil{
-		ActiveClients[username] = cc
-		RemoteUserMap[cc.clientIP] = username
-	}
-	ActiveClientsRWMutex.Unlock()
-	RemoteUserMapRWMutex.Unlock()
+// initialize a new hub
+var hub = Hub{
+    broadcast:     make(chan []byte),
+    addClient:     make(chan *Client),
+    removeClient:  make(chan *Client),
+    clients:       make(map[*Client]bool),
 }
 
-func deleteClient(cc string) {
-	ActiveClientsRWMutex.Lock()
-	//RemoteUserMapRWMutex.Lock()
-	delete(ActiveClients, cc)
-	//delete(RemoteUserMap, cc.clientIP)
-	ActiveClientsRWMutex.Unlock()
-	//RemoteUserMapRWMutex.Unlock()
+// Runs forever as a goroutine
+func (hub *Hub) start() {
+    for {
+        // one of these fires when a channel
+        // receives data
+        select {
+        case conn := <-hub.addClient:
+            // add a new client
+            hub.clients[conn] = true
+        case conn := <-hub.removeClient:
+            // remove a client
+            if _, ok := hub.clients[conn]; ok {
+                delete(hub.clients, conn)
+                close(conn.send)
+            }
+        case message := <-hub.broadcast:
+            // broadcast a message to all clients
+            var msg Message
+            if err := json.Unmarshal(message, &msg); err != nil {
+        		panic(err)
+    		}
+            for conn := range hub.clients {
+                select {
+                case conn.send <- message:
+                	 cl := ActiveClients[msg.To]
+                	 log.Println(cl)
+                	 log.Println(hub.clients[cl])
+                	 log.Println("conn",conn)
+                default:
+                    close(conn.send)
+                    delete(hub.clients, conn)
+                }
+            }
+        }
+    }
 }
 
-func (uc UserController) broadcastMessage(msg Message,from string) {
-	ActiveClientsRWMutex.RLock()
-	defer ActiveClientsRWMutex.RUnlock()
-	dbData := models.User{}
-	if _,ok := ActiveClients[msg.To]; !ok{
-		if error := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": msg.To}).One(&dbData); error != nil {
-			log.Println(error.Error(),"user not in db, user not exist")
-			rep := Werror{Type: "alert", Data: "The user doesn't exists" }
-			if err := ActiveClients[from].websocket.WriteJSON(rep); err != nil{
-				return
-			}
-		}else{
-			log.Println("userexist in db, user in offline")
-			rep := Werror{Type: "alert", Data: "The user is not available" }
-			if err := ActiveClients[from].websocket.WriteJSON(rep); err != nil{
-				return
-			}
-		}
-	}else{
-		t := time.Now()
-		var dat = Datas{Time:t.Format("2006/01/02/15:04:05"),Text:msg.Msg,To:msg.To,Author:from}
-		var rep = Reply{Type:"message",Data: dat}
-		if err := ActiveClients[msg.To].websocket.WriteJSON(rep); err != nil{
-			return
-		}
-	}
+
+type Client struct {
+    ws *websocket.Conn
+    // Hub passes broadcast messages to this channel
+    send chan []byte
 }
+
+// Hub broadcasts a new message and this fires
+func (c *Client) write() {
+	var msg Message
+    // make sure to close the connection incase the loop exits
+    defer func() {
+        c.ws.Close()
+    }()
+
+    for {
+        select {
+        case message, ok := <-c.send:
+            if !ok {
+                c.ws.WriteMessage(websocket.CloseMessage, []byte{})
+                return
+            }
+            if err := json.Unmarshal(message, &msg); err != nil {
+        		panic(err)
+    		}
+    		if(c == ActiveClients[msg.To]){
+    			c.ws.WriteMessage(websocket.TextMessage, []byte(msg.To))
+    		}
+
+        }
+    }
+}
+
+// New message received so pass it to the Hub
+func (c *Client) read() {
+    defer func() {
+        hub.removeClient <- c
+        c.ws.Close()
+    }()
+
+    for {
+        _, message, err := c.ws.ReadMessage()
+        if err != nil {
+            hub.removeClient <- c
+            c.ws.Close()
+            break
+        }
+
+        hub.broadcast <- message
+    }
+}
+
+
+
 
 // getSession creates a new mongo session and panics if connection error occurs
 func getSession() *mgo.Session {
+
+	go hub.start()
 	// Connect to our local mongo
 	s, err := mgo.Dial("mongodb://localhost")
 
@@ -270,3 +306,4 @@ func getSession() *mgo.Session {
 	// Deliver session
 	return s
 }
+

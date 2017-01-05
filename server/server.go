@@ -18,7 +18,6 @@ func CreateServer() {
 
 	// Get a UserController instance
 	uc := controllers.Uc
-
 	user := "gordon"
     pass := "secret!"
 	router := fasthttprouter.New()
