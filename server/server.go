@@ -19,7 +19,7 @@ func WebSocket(){
     iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
 		spew.Dump(c)
         c.Join(myChatRoom)
-		log.Println("\nConnection with ID: %s has been connected!", c.ID())	
+		log.Println("\nConnection with ID: %s has been connected!", c.ID())
         c.On("chat", func(message string) {
             c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
         })
@@ -27,7 +27,7 @@ func WebSocket(){
         c.OnDisconnect(func() {
             log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
         })
-    })	
+    })
 }
 
 
@@ -35,6 +35,8 @@ func CreateServer() {
 
 	// Get a UserController instance
 	uc := controllers.NewUserController(getSession())
+
+	uc.SetupDb()
 
 	myJwtMiddleware := jwtmiddleware.New(jwtmiddleware.Config{
 		ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
@@ -47,23 +49,23 @@ func CreateServer() {
 
 	//login
 	iris.Post("webchat/login", uc.Login)
-	
+
 	//logout
 	iris.Post("webchat/logout", uc.Logout)
 
 
 	//test
 	iris.Post("webchat/signin", myJwtMiddleware.Serve, uc.SecuredPingHandler)
-	
+
 	iris.Config.Websocket.Endpoint = "/"
     // for Allow origin you can make use of the middleware
     //iris.Config.Websocket.Headers["Access-Control-Allow-Origin"] = "*"
 	 var myChatRoom = "room1"
     iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
-		log.Println("params", c)
-		spew.Dump(c)
+		//log.Println("params", c)
+		//spew.Dump(c)
         c.Join(myChatRoom)
-		log.Println("\nConnection with ID: %s has been connected!", c.ID())	
+		log.Println("\nConnection with ID: %s has been connected!", c.ID())
         c.On("chat", func(message string) {
 			log.Println("From: ", c.ID(), ":message ", message)
             c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
@@ -72,7 +74,7 @@ func CreateServer() {
         c.OnDisconnect(func() {
             log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
         })
-    })	
+    })
 	//	// Remove an existing user
 	//	iris.DELETE("webchat/users/:id", uc.RemoveUser)
 	iris.OnError(iris.StatusInternalServerError, func(ctx *iris.Context) {

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/aswinkk1/baxoxy/models"
-	"github.com/aswinkk1/baxoxy/services"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/kataras/iris"
 	"gopkg.in/mgo.v2"
@@ -42,21 +41,25 @@ func (uc UserController) CreateUser(ctx *iris.Context) {
 		log.Println(err.Error())
 	} else {
 		log.Println("user.Username", user.Username)
-		if count, err := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).Count(); count == 0 {
 			user.Id = bson.NewObjectId()
-			uc.session.DB("baxoxy").C("users").Insert(user)
-			response.Status = 200
-			response.Action = "signup"
-			response.Message = "Sign Up Successfull"
-		} else {
-			log.Println("Query--", response, " ", err)
-			response.Status = 201
-			response.Message = "Username already exists"
-		}
+			err := uc.session.DB("baxoxy").C("users").Insert(user)
+			log.Println("userInsertError",err)
+			if err ==nil{
+				response.Status = 200
+				response.Action = "signup"
+				response.Message = "Sign Up Successfull"
+			}else{
+				log.Println("Query--", response, " ", err)
+				response.Status = 201
+				response.Message = "Username already exists"
+			}
+
 	}
 	log.Println("Quer--", response)
 	ctx.JSON(iris.StatusCreated, response)
 }
+
+var LoggedUsers = make(map[string]string)
 
 // Login removes an existing user resource
 func (uc UserController) Login(ctx *iris.Context) {
@@ -84,13 +87,7 @@ func (uc UserController) Login(ctx *iris.Context) {
 				response.Action = "login"
 				response.Message = "user signed"
 				response.Token = tokenString
-				
-				dbClient := services.RedisClient()
-				dbErr := dbClient.Set(user.Username, tokenString, 0).Err()
-				if dbErr != nil {
-					log.Println("error", dbErr)
-					response.Message ="Error"
-				}
+				LoggedUsers[user.Username] = tokenString
 				log.Println("tokenString", tokenString, err)
 			}
 		}
@@ -106,26 +103,34 @@ func (uc UserController) Logout(ctx *iris.Context) {
 		log.Println(err.Error())
 	} else {
 		log.Println("user.Username", user.Username)
-		if count, err := uc.session.DB("baxoxy").C("users").Find(bson.M{"username": user.Username}).Count(); count == 0 {
-			log.Println(err.Error())
-			response.Message ="Logged out Error"
-		} else {			
-			dbClient := services.RedisClient()
-			err := dbClient.Del(user.Username).Err()
-			if err != nil {
-				response.Message ="Logged out Error"
-			} else {
-				response.Status = 200
-				response.Action = "logout"
-				response.Message = "logged Out successfully"
-			}
-			log.Println("token deleted with key", user.Username)
-		}
+		delete(LoggedUsers,user.Username)
+		response.Status = 200
+		response.Action = "logout"
+		response.Message = "logged Out successfully"
+		log.Println("token deleted with key", user.Username)
 	}
 	ctx.JSON(iris.StatusCreated, response)
 }
 
 func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
-	
+
 	ctx.Write("All good. You only get this message if you're authenticated")
+}
+
+func (uc UserController) SetupDb() {
+
+	log.Println("setupdb")
+	c := uc.session.DB("baxoxy").C("users")
+
+	// Index
+	index := mgo.Index{
+		Key:        []string{"username"},
+		Unique:     true,
+	}
+
+	err := c.EnsureIndex(index)
+	if err != nil {
+		panic(err)
+	}
+
 }
