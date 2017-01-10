@@ -77,7 +77,7 @@ func (uc UserController) Login(ctx *iris.Context) {
 			log.Println("db", dbData.Password, "APi", user.Password)
 			if dbData.Password == user.Password {
 				token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-					"foo": "bar",
+					"username": user.Username,
 					"nbf": time.Date(2015, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
 				})
 
@@ -114,7 +114,7 @@ func (uc UserController) Logout(ctx *iris.Context) {
 
 func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
 
-	ctx.Write("All good. You only get this message if you're authenticated")
+	ctx.Write([]byte("All good. You only get this message if you're authenticated"))
 }
 
 func (uc UserController) SetupDb() {

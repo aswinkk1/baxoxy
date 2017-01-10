@@ -2,34 +2,23 @@ package server
 
 import (
 	"log"
+	"strings"
+	"encoding/json"
 	// Third party packages
 	"github.com/aswinkk1/baxoxy/controllers"
-	"github.com/davecgh/go-spew/spew"
+	//"github.com/davecgh/go-spew/spew"
 	"github.com/dgrijalva/jwt-go"
 	jwtmiddleware "github.com/iris-contrib/middleware/jwt"
 	"github.com/kataras/iris"
 	"gopkg.in/mgo.v2"
 )
-func WebSocket(){
-	iris.Config.Websocket.Endpoint = "/test"
-    // for Allow origin you can make use of the middleware
-    //iris.Config.Websocket.Headers["Access-Control-Allow-Origin"] = "*"
 
-    var myChatRoom = "room1"
-    iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
-		spew.Dump(c)
-        c.Join(myChatRoom)
-		log.Println("\nConnection with ID: %s has been connected!", c.ID())
-        c.On("chat", func(message string) {
-            c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
-        })
+var ActiveClients = make(map[string]string)
 
-        c.OnDisconnect(func() {
-            log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
-        })
-    })
+type Message struct {
+        To    string `json:"to"`
+        Msg string `json:"msg"`
 }
-
 
 func CreateServer() {
 
@@ -60,31 +49,50 @@ func CreateServer() {
 	iris.Config.Websocket.Endpoint = "/"
     // for Allow origin you can make use of the middleware
     //iris.Config.Websocket.Headers["Access-Control-Allow-Origin"] = "*"
-	 var myChatRoom = "room1"
+	 //var myChatRoom = "room1"
     iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
-		//log.Println("params", c)
+    	id := c.ID()
+    	log.Println("\nConnection with ID: %s has been connected!", id)
+		token := strings.TrimPrefix(c.Request().RequestURI,"/?token=")
+		if username,err := TokenParser(token); err == nil{
+			ActiveClients[username] = id
+			log.Println(ActiveClients)
+		}else{
+			go c.Disconnect();
+			//log.Println("er",er)
+			log.Println("err",err)
+		}
 		//spew.Dump(c)
-        c.Join(myChatRoom)
-		log.Println("\nConnection with ID: %s has been connected!", c.ID())
-        c.On("chat", func(message string) {
-			log.Println("From: ", c.ID(), ":message ", message)
-            c.To(myChatRoom).Emit("chat", "From: "+c.ID()+": "+message)
+        //c.Join(myChatRoom)
+        c.OnMessage(func(message []byte){
+        	var msg Message
+        	log.Println(string(message))
+        	if err := json.Unmarshal(message, &msg); err != nil {
+        		panic(err)
+    		}
+    		log.Println(msg)
+    		c.To(ActiveClients[msg.To]).EmitMessage([]byte(message))
+    		c.EmitMessage([]byte(message))
         })
 
         c.OnDisconnect(func() {
+        	token := strings.TrimPrefix(c.Request().RequestURI,"/?token=")
+        	log.Println(token)
+        	username,_ := TokenParser(token)
+        	delete(ActiveClients,username)
             log.Println("\nConnection with ID: %s has been disconnected!", c.ID())
         })
     })
 	//	// Remove an existing user
 	//	iris.DELETE("webchat/users/:id", uc.RemoveUser)
 	iris.OnError(iris.StatusInternalServerError, func(ctx *iris.Context) {
-		ctx.Write("CUSTOM 500 INTERNAL SERVER ERROR PAGE")
+		ctx.Write([]byte("CUSTOM 500 INTERNAL SERVER ERROR PAGE"))
 		// or ctx.Render, ctx.HTML any render method you want
 		ctx.Log("http status: 500 happened!")
 	})
 
 	iris.OnError(iris.StatusNotFound, func(ctx *iris.Context) {
-		ctx.Write("CUSTOM 404 NOT FOUND ERROR PAGE")
+		ctx.Write([]byte("CUSTOM 404 NOT FOUND ERROR PAGE"))
 		ctx.Log("http status: 404 happened!")
 	})
 
@@ -98,7 +106,7 @@ func CreateServer() {
 	})
 
 	// Fire up the server
-	iris.Listen("localhost:5700")
+	iris.Listen("10.7.20.26:5700")
 }
 
 // getSession creates a new mongo session and panics if connection error occurs
@@ -113,4 +121,26 @@ func getSession() *mgo.Session {
 
 	// Deliver session
 	return s
+}
+
+type MyCustomClaims struct {
+    Username string `json:"username"`
+    jwt.StandardClaims
+}
+
+
+func TokenParser(myToken string) (string,error){
+    myKey := "secret"
+    var username string
+    token, err := jwt.ParseWithClaims(myToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+        return []byte(myKey), nil
+    })
+
+    if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {
+        log.Printf("%v", claims.Username)
+        username = claims.Username
+    } else {
+        log.Println(err)
+    }
+    return username,err
 }
