@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 	"encoding/json"
+	"time"
 	// Third party packages
 	"github.com/aswinkk1/baxoxy/controllers"
 	//"github.com/davecgh/go-spew/spew"
@@ -18,6 +19,18 @@ var ActiveClients = make(map[string]string)
 type Message struct {
         To    string `json:"to"`
         Msg string `json:"msg"`
+}
+
+type Reply struct {
+	Type string `json:"type"`
+	Data Datas `json:"data"`
+}
+
+type Datas struct {
+	Time string `json:"time"`
+	Text string `json:"text"`
+	To string `json:"to"`
+	Author string `json:"author"`
 }
 
 func CreateServer() {
@@ -70,9 +83,14 @@ func CreateServer() {
         	if err := json.Unmarshal(message, &msg); err != nil {
         		panic(err)
     		}
-    		log.Println(msg)
-    		c.To(ActiveClients[msg.To]).EmitMessage([]byte(message))
-    		c.EmitMessage([]byte(message))
+    		token := strings.TrimPrefix(c.Request().RequestURI,"/?token=")
+    		username,_ := TokenParser(token)
+    		t := time.Now()
+    		var dat = Datas{Time:t.Format("2006/01/02/15:04:05"),Text:msg.Msg,To:msg.To,Author:username}
+			var rep = Reply{Type:"message",Data: dat}
+			b, _ := json.Marshal(rep)
+    		c.To(ActiveClients[msg.To]).EmitMessage(b)
+    		c.EmitMessage(b)
         })
 
         c.OnDisconnect(func() {
