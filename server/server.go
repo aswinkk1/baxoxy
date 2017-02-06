@@ -3,7 +3,7 @@ package server
 import (
 	"log"
 	//"strings"
-	//"encoding/json"
+	"encoding/json"
 	"time"
 	"bytes"
 	"flag"
@@ -19,11 +19,13 @@ import (
 
 )
 
-var ActiveClients = make(map[string]string)
+var ActiveClients = make(map[string]*Client)
+var ActiveUsernames = make(map[*Client]string)
 
 type Message struct {
         To    string `json:"to"`
         Msg string `json:"msg"`
+        From string `json:"from"`
 }
 
 type Reply struct {
@@ -142,19 +144,6 @@ func TokenParser(myToken string) (string,error){
     }
     return username,err
 }
-/*
-func serveHome(w http.ResponseWriter, r *http.Request) {
-	log.Println(r.URL)
-	if r.URL.Path != "/" {
-		http.Error(w, "Not found", 404)
-		return
-	}
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", 405)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-}*/
 
 
 //hub
@@ -183,6 +172,7 @@ func newHub() *Hub {
 }
 
 func (h *Hub) run() {
+	var msg Message
 	for {
 		select {
 		case client := <-h.register:
@@ -193,14 +183,15 @@ func (h *Hub) run() {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
+			json.Unmarshal([]byte(message), &msg)
+			if _,ok := ActiveClients[msg.To]; ok{
+				t := time.Now()
+				var dat = Datas{Time:t.Format("2006/01/02/15:04:05"),Text:msg.Msg,To:msg.To,Author:msg.From}
+				var rep = Reply{Type:"message",Data: dat}
+				res,_ := json.Marshal(rep)
+				ActiveClients[msg.To].send <- res
 			}
+
 		}
 	}
 }
@@ -242,6 +233,8 @@ type Client struct {
 	// The websocket connection.
 	conn *websocket.Conn
 
+	username string
+
 	// Buffered channel of outbound messages.
 	send chan []byte
 }
@@ -252,6 +245,7 @@ type Client struct {
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
 func (c *Client) readPump() {
+	var msg Message
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
@@ -268,6 +262,9 @@ func (c *Client) readPump() {
 			break
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
+		json.Unmarshal([]byte(message), &msg)
+		msg.From = ActiveUsernames[c]
+		message,_ = json.Marshal(msg)
 		c.hub.broadcast <- message
 	}
 }
@@ -321,11 +318,14 @@ func (c *Client) writePump() {
 // serveWs handles websocket requests from the peer.
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
+	username,_ := TokenParser(r.FormValue("token"))
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	ActiveClients[username] = client
+	ActiveUsernames[client] = username
 	client.hub.register <- client
 	go client.writePump()
 	client.readPump()
