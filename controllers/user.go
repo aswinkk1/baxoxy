@@ -2,8 +2,14 @@ package controllers
 
 import (
 	// "encoding/json"
-	"log"
+	"os"
+    "log"
+    "encoding/csv"
+	"encoding/json"
 	"time"
+	"sync"
+	"strconv"
+	
 
 	"github.com/aswinkk1/baxoxy/models"
 	"github.com/dgrijalva/jwt-go"
@@ -25,6 +31,24 @@ type (
 		Token   string `json:"token"`
 	}
 )
+var fileMutex sync.Mutex
+
+func Logger(http_logs []string)	{
+	fileMutex.Lock()
+	defer fileMutex.Unlock()
+	file, err := os.OpenFile("result.csv", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+			log.Fatal("Cannot open file", err)			
+	}
+	defer file.Close()
+	writer := csv.NewWriter(file)
+	
+	err = writer.Write(http_logs)
+	if err != nil {
+		log.Fatal("Cannot write to file", err)
+	} 	
+	defer writer.Flush()	
+}
 
 // NewUserController provides a reference to a UserController with provided mongo session
 func NewUserController(s *mgo.Session) *UserController {
@@ -33,7 +57,7 @@ func NewUserController(s *mgo.Session) *UserController {
 
 // CreateUser creates a new user resource
 func (uc UserController) CreateUser(ctx *iris.Context) {
-
+	var rec_time = time.Now()
 	user := models.User{}
 	response := Response{Status: 400, Message: "Error"}
 	log.Println("Quer--", response)
@@ -56,6 +80,10 @@ func (uc UserController) CreateUser(ctx *iris.Context) {
 
 	}
 	log.Println("Quer--", response)
+	resp,_ := json.Marshal(response)
+	req,_ := json.Marshal(user)
+	http_logs := []string{ctx.RemoteAddr(), string(ctx.Path()), string(req), strconv.FormatInt(rec_time.Unix(), 10), string(resp), strconv.FormatInt(time.Now().Unix(), 10), response.Message}
+	go Logger(http_logs)
 	ctx.JSON(iris.StatusCreated, response)
 }
 
@@ -63,6 +91,7 @@ var LoggedUsers = make(map[string]string)
 
 // Login removes an existing user resource
 func (uc UserController) Login(ctx *iris.Context) {
+	var rec_time = time.Now()
 	// Stub an user to be populated from the body
 	user := models.User{}
 	response := Response{Status: 400, Message: "Error"}
@@ -92,11 +121,16 @@ func (uc UserController) Login(ctx *iris.Context) {
 			}
 		}
 	}
+	resp,_ := json.Marshal(response)
+	req,_ := json.Marshal(user)
+	http_logs := []string{ctx.RemoteAddr(), string(ctx.Path()), string(req), strconv.FormatInt(rec_time.Unix(), 10), string(resp), strconv.FormatInt(time.Now().Unix(), 10), response.Message}
+	go Logger(http_logs)
 	ctx.JSON(iris.StatusCreated, response)
 }
 
 
 func (uc UserController) Logout(ctx *iris.Context) {
+	var rec_time = time.Now()
 	user := models.User{}
 	response := Response{Status: 400, Message: "Error"}
 	if err := ctx.ReadJSON(&user); err != nil {
@@ -109,12 +143,16 @@ func (uc UserController) Logout(ctx *iris.Context) {
 		response.Message = "logged Out successfully"
 		log.Println("token deleted with key", user.Username)
 	}
+	resp,_ := json.Marshal(response)
+	req,_ := json.Marshal(user)
+	http_logs := []string{ctx.RemoteAddr(), string(ctx.Path()), string(req), strconv.FormatInt(rec_time.Unix(), 10), string(resp), strconv.FormatInt(time.Now().Unix(), 10), response.Message}
+	go Logger(http_logs)
 	ctx.JSON(iris.StatusCreated, response)
 }
 
 func (uc UserController) SecuredPingHandler(ctx *iris.Context) {
 
-	ctx.Write([]byte("All good. You only get this message if you're authenticated"))
+	ctx.Write("All good. You only get this message if you're authenticated")
 }
 
 func (uc UserController) SetupDb() {

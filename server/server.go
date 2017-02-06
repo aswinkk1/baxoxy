@@ -2,6 +2,9 @@ package server
 
 import (
 	"log"
+	"os"
+	"encoding/csv"
+	"strconv"
 	//"strings"
 	"encoding/json"
 	"time"
@@ -19,6 +22,7 @@ import (
 
 )
 
+
 var ActiveClients = make(map[string]*Client)
 var ActiveUsernames = make(map[*Client]string)
 
@@ -26,6 +30,8 @@ type Message struct {
         To    string `json:"to"`
         Msg string `json:"msg"`
         From string `json:"from"`
+		Time string `json:"time"`
+		Remote string `json:"remote"`
 }
 
 type Reply struct {
@@ -72,13 +78,13 @@ func CreateServer() {
 	//	// Remove an existing user
 	//	iris.DELETE("webchat/users/:id", uc.RemoveUser)
 	iris.OnError(iris.StatusInternalServerError, func(ctx *iris.Context) {
-		ctx.Write([]byte("CUSTOM 500 INTERNAL SERVER ERROR PAGE"))
+		ctx.Write("CUSTOM 500 INTERNAL SERVER ERROR PAGE")
 		// or ctx.Render, ctx.HTML any render method you want
 		ctx.Log("http status: 500 happened!")
 	})
 
 	iris.OnError(iris.StatusNotFound, func(ctx *iris.Context) {
-		ctx.Write([]byte("CUSTOM 404 NOT FOUND ERROR PAGE"))
+		ctx.Write("CUSTOM 404 NOT FOUND ERROR PAGE")
 		ctx.Log("http status: 404 happened!")
 	})
 
@@ -92,7 +98,7 @@ func CreateServer() {
 	})
 
 	// Fire up the server
-	iris.Listen("10.7.20.26:5700")
+	iris.Listen("10.7.20.27:5700")
 
 }
 
@@ -186,9 +192,11 @@ func (h *Hub) run() {
 			json.Unmarshal([]byte(message), &msg)
 			if _,ok := ActiveClients[msg.To]; ok{
 				t := time.Now()
-				var dat = Datas{Time:t.Format("2006/01/02/15:04:05"),Text:msg.Msg,To:msg.To,Author:msg.From}
+				var dat = Datas{Time: strconv.FormatInt(t.Unix(), 10), Text:msg.Msg, To:msg.To, Author:msg.From}
 				var rep = Reply{Type:"message",Data: dat}
 				res,_ := json.Marshal(rep)
+				http_logs := []string{msg.Remote, msg.From, msg.To, msg.Msg, msg.Time, dat.Time}
+				go webLogger(http_logs)
 				ActiveClients[msg.To].send <- res
 			}
 
@@ -239,12 +247,28 @@ type Client struct {
 	send chan []byte
 }
 
+func webLogger(http_logs []string)	{
+	file, err := os.OpenFile("webchat.csv", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+			log.Fatal("Cannot open file", err)			
+	}
+	defer file.Close()
+	writer := csv.NewWriter(file)
+	
+	err = writer.Write(http_logs)
+	if err != nil {
+		log.Fatal("Cannot write to file", err)
+	} 	
+	defer writer.Flush()	
+}
+
+
 // readPump pumps messages from the websocket connection to the hub.
 //
 // The application runs readPump in a per-connection goroutine. The application
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
-func (c *Client) readPump() {
+func (c *Client) readPump(r *http.Request) {
 	var msg Message
 	defer func() {
 		c.hub.unregister <- c
@@ -264,7 +288,10 @@ func (c *Client) readPump() {
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		json.Unmarshal([]byte(message), &msg)
 		msg.From = ActiveUsernames[c]
+		msg.Time = strconv.FormatInt(time.Now().Unix(), 10)
+		msg.Remote = r.RemoteAddr
 		message,_ = json.Marshal(msg)
+		
 		c.hub.broadcast <- message
 	}
 }
@@ -328,5 +355,5 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	ActiveUsernames[client] = username
 	client.hub.register <- client
 	go client.writePump()
-	client.readPump()
+	client.readPump(r)
 }
